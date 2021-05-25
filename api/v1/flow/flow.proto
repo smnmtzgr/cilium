@@ -98,6 +98,9 @@ message Flow {
     // proxy_port indicates the port of the proxy to which the flow was forwarded
     uint32 proxy_port = 29;
 
+    // orig_len is the length of the packet
+    uint32 orig_len = 30;
+
     // This is a temporary workaround to support summary field for pb.Flow without
     // duplicating logic from the old parser. This field will be removed once we
     // fully migrate to the new parser.
