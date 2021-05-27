@@ -1,0 +1,65 @@
+name: Cilium L4LB XDP
+
+# Any change in triggers needs to be reflected in the concurrency group.
+on:
+  pull_request:
+    paths-ignore:
+      - 'Documentation/**'
+      - 'test/**'
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - 'Documentation/**'
+      - 'test/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.after }}
+  cancel-in-progress: true
+
+jobs:
+  setup-and-test:
+    name: Cilium L4LB XDP
+    # We need nested virtualisation which is supported only by MacOS runner
+    runs-on: macos-10.15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          persist-credentials: false
+
+      - name: Boot Fedora
+        run: |
+          ln -sf ./test/l4lb-xdp/Vagrantfile ./Vagrantfile
+          # Retry if it fails (download.fedoraproject.org returns 404 sometimes)
+          # Spend up to 10 seconds on this
+          for i in {1..4}; do
+            if vagrant up; then
+              break
+            fi
+            sleep $i
+          done
+          vagrant ssh-config >> ~/.ssh/config
+
+      - name: Set image tag
+        id: vars
+        run: |
+          if [ ${{ github.event.pull_request.head.sha }} != "" ]; then
+            echo ::set-output name=tag::${{ github.event.pull_request.head.sha }}
+          else
+            echo ::set-output name=tag::${{ github.sha }}
+          fi
+
+
+      - name: Wait for image to be available
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          until curl --silent -f -lSL "https://quay.io/api/v1/repository/${{ github.repository_owner }}/cilium-ci/tag/${{ steps.vars.outputs.tag }}/images" &> /dev/null; do sleep 45s; done
+
+      - name: Run tests
+        run: |
+          ssh default "sudo /bin/sh -c 'cd /vagrant/test/l4lb-xdp && ./test.sh quay.io/${{ github.repository_owner}}/cilium-ci:${{ steps.vars.outputs.tag }}'"
